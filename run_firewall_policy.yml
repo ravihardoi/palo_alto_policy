@@ -1,8 +1,0 @@
----
-- name: AWX Test
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Test discovery
-      ansible.builtin.debug:
-        msg: "Playbook discovered"
