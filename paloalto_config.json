@@ -1,0 +1,8 @@
+{
+  "hostname": "10.100.99.100",
+  "username": "admin",
+  "password": "Paloalto1!",
+  "excel_path": "requests.xlsx",
+  "apply": true,
+  "commit": false
+}
