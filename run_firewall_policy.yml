@@ -9,7 +9,7 @@
     firewall_request:
       hostname: "10.100.99.100"
       username: "{{ lookup('env', 'admin') }}"
-      password: "{{ lookup('env', 'Pasloalto1!') }}"
+      password: "{{ lookup('env', 'Paloalto1!') }}"
       excel_path: "{{ playbook_dir }}/requests.xlsx"
       apply: true
       commit: false
