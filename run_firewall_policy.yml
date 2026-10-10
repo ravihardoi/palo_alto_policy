@@ -1,66 +1,79 @@
-
 ---
-- name: Execute Palo Alto Firewall Policy Automation
-  hosts: localhost
-  connection: local
-  gather_facts: false
+# awx_run_policy_manager.yml
+#
+# AWX job template playbook for paloalto_policy_manager.py.
+# Put this file, the script, and requests.xlsx in the same AWX project (Git repo).
+#
+# ---------------------------------------------------------------------------
+# 1) AWX custom credential type  (Administration > Credential Types > Add)
+#    Name: Palo Alto PAN-OS API
+#
+#    Input configuration:
+#      fields:
+#        - id: api_key
+#          type: string
+#          label: API Key
+#          secret: true
+#        - id: username
+#          type: string
+#          label: Username
+#        - id: password
+#          type: string
+#          label: Password
+#          secret: true
+#
+#    Injector configuration:
+#      env:
+#        PANOS_API_KEY: '{{ api_key | default("") }}'
+#        PANOS_USERNAME: '{{ username | default("") }}'
+#        PANOS_PASSWORD: '{{ password | default("") }}'
+#
+#    Then create a credential of this type (fill API key, OR username+password)
+#    and attach it to the job template.
+#
+# 2) Inventory: put the firewall(s) in a group named "paloalto_firewalls".
+#    Set ansible_host if the host name isn't reachable as-is.
+#
+# 3) Execution Environment must have: pan-os-python, openpyxl
+#
+# 4) Extra vars on the job template / survey:
+#      pan_apply: false     # true = stage changes in candidate config
+#      pan_commit: false    # true = also commit
+# ---------------------------------------------------------------------------
 
+- name: Push Palo Alto security policies from Excel
+  hosts: paloalto_firewalls
+  gather_facts: false
+  connection: local
+  serial: 1            # one firewall at a time - they all write to the same Excel file
   vars:
-    firewall_request:
-      hostname: "10.100.99.100"
-      username: "{{ lookup('env', 'admin') }}"
-      password: "{{ lookup('env', 'Pasloalto1!') }}"
-      excel_path: "{{ playbook_dir }}/requests.xlsx"
-      apply: true
-      commit: false
+    pan_apply: false
+    pan_commit: false
+    pan_excel: "{{ playbook_dir }}/requests.xlsx"
 
   tasks:
-    - name: Verify Excel file exists
-      ansible.builtin.stat:
-        path: "{{ firewall_request.excel_path }}"
-      register: excel_file
+    - name: Run policy manager against {{ inventory_hostname }}
+      ansible.builtin.command:
+        argv: "{{ base_args + (['--apply'] if pan_apply | bool else []) + (['--commit'] if pan_commit | bool else []) }}"
+      vars:
+        base_args:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/paloalto_policy_manager.py"
+          - "--excel"
+          - "{{ pan_excel }}"
+          - "--implementation-sheet"
+          - "Impl-{{ inventory_hostname[:25] }}"
+      environment:
+        PANOS_HOSTNAME: "{{ ansible_host | default(inventory_hostname) }}"
+        PANOS_API_KEY: "{{ lookup('env', 'PANOS_API_KEY') }}"
+        PANOS_USERNAME: "{{ lookup('env', 'PANOS_USERNAME') }}"
+        PANOS_PASSWORD: "{{ lookup('env', 'PANOS_PASSWORD') }}"
+      register: pan_run
+      changed_when: >-
+        (pan_apply | bool) and
+        (pan_run.stdout is search('Summary: [1-9]\d* merged') or
+         pan_run.stdout is search(', [1-9]\d* created'))
 
-    - name: Stop if Excel file is missing
-      ansible.builtin.assert:
-        that:
-          - excel_file.stat.exists
-          - excel_file.stat.isreg
-        fail_msg: "requests.xlsx was not found in the AWX project."
-
-    - name: Create temporary JSON input file
-      ansible.builtin.tempfile:
-        state: file
-        suffix: .json
-      register: json_temp
-      no_log: true
-
-    - name: Write firewall parameters to JSON
-      ansible.builtin.copy:
-        dest: "{{ json_temp.path }}"
-        mode: "0600"
-        content: "{{ firewall_request | to_nice_json }}"
-      no_log: true
-
-    - name: Run Palo Alto policy manager
-      block:
-        - name: Execute Python script
-          ansible.builtin.command:
-            argv:
-              - python3
-              - "{{ playbook_dir }}/paloalto_policy_manager.py"
-              - "{{ json_temp.path }}"
-          register: firewall_result
-          no_log: true
-
-        - name: Report success
-          ansible.builtin.debug:
-            msg: "Palo Alto policy manager completed successfully."
-          when: firewall_result.rc == 0
-
-      always:
-        - name: Delete temporary JSON file
-          ansible.builtin.file:
-            path: "{{ json_temp.path }}"
-            state: absent
-          when: json_temp.path is defined
-          no_log: true
+    - name: Show results for {{ inventory_hostname }}
+      ansible.builtin.debug:
+        var: pan_run.stdout_lines
