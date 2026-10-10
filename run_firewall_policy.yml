@@ -1,0 +1,66 @@
+
+---
+- name: Execute Palo Alto Firewall Policy Automation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    firewall_request:
+      hostname: "10.100.99.100"
+      username: "{{ lookup('env', 'admin') }}"
+      password: "{{ lookup('env', 'Pasloalto1!') }}"
+      excel_path: "{{ playbook_dir }}/requests.xlsx"
+      apply: true
+      commit: false
+
+  tasks:
+    - name: Verify Excel file exists
+      ansible.builtin.stat:
+        path: "{{ firewall_request.excel_path }}"
+      register: excel_file
+
+    - name: Stop if Excel file is missing
+      ansible.builtin.assert:
+        that:
+          - excel_file.stat.exists
+          - excel_file.stat.isreg
+        fail_msg: "requests.xlsx was not found in the AWX project."
+
+    - name: Create temporary JSON input file
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .json
+      register: json_temp
+      no_log: true
+
+    - name: Write firewall parameters to JSON
+      ansible.builtin.copy:
+        dest: "{{ json_temp.path }}"
+        mode: "0600"
+        content: "{{ firewall_request | to_nice_json }}"
+      no_log: true
+
+    - name: Run Palo Alto policy manager
+      block:
+        - name: Execute Python script
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ playbook_dir }}/paloalto_policy_manager.py"
+              - "{{ json_temp.path }}"
+          register: firewall_result
+          no_log: true
+
+        - name: Report success
+          ansible.builtin.debug:
+            msg: "Palo Alto policy manager completed successfully."
+          when: firewall_result.rc == 0
+
+      always:
+        - name: Delete temporary JSON file
+          ansible.builtin.file:
+            path: "{{ json_temp.path }}"
+            state: absent
+          when: json_temp.path is defined
+          no_log: true
