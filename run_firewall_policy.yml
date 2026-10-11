@@ -42,7 +42,7 @@
 # ---------------------------------------------------------------------------
 
 - name: Push Palo Alto security policies from Excel
-  hosts: paloalto_firewalls
+  hosts: all
   gather_facts: false
   connection: local
   serial: 1            # one firewall at a time - they all write to the same Excel file
@@ -58,7 +58,7 @@
       vars:
         base_args:
           - "{{ ansible_playbook_python }}"
-          - "{{ playbook_dir }}/paloalto_policy_manager.py"
+          - "{{ playbook_dir }}/paloalto_policy_manager_ver2.py"
           - "--excel"
           - "{{ pan_excel }}"
           - "--implementation-sheet"
