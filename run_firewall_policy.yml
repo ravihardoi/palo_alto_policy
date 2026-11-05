@@ -1,38 +1,21 @@
 ---
-# awx_run_policy_manager.yml
+# run_firewall_policy.yml
 #
-# AWX job template playbook for paloalto_policy_manager.py.
-# Put this file, the script, and requests.xlsx in the same AWX project (Git repo).
+# AWX job template playbook for paloalto_policy_manager_ver2.py.
+# Put this file, the script, requests.xlsx and vault_panos.yml in the same
+# AWX project (Git repo).
 #
 # ---------------------------------------------------------------------------
-# 1) AWX custom credential type  (Administration > Credential Types > Add)
-#    Name: Palo Alto PAN-OS API
+# 1) Credentials: stored in vault_panos.yml, encrypted with ansible-vault.
+#    The file must contain:
+#      panos_username: <firewall username>
+#      panos_password: <firewall password>
 #
-#    Input configuration:
-#      fields:
-#        - id: api_key
-#          type: string
-#          label: API Key
-#          secret: true
-#        - id: username
-#          type: string
-#          label: Username
-#        - id: password
-#          type: string
-#          label: Password
-#          secret: true
-#
-#    Injector configuration:
-#      env:
-#        PANOS_API_KEY: '{{ api_key | default("") }}'
-#        PANOS_USERNAME: '{{ username | default("") }}'
-#        PANOS_PASSWORD: '{{ password | default("") }}'
-#
-#    Then create a credential of this type (fill API key, OR username+password)
+#    In AWX, create a credential of type "Vault" with the Vault password
 #    and attach it to the job template.
 #
-# 2) Inventory: put the firewall(s) in a group named "paloalto_firewalls".
-#    Set ansible_host if the host name isn't reachable as-is.
+# 2) Inventory: add the firewall as a host and set ansible_host to its
+#    management IP.
 #
 # 3) Execution Environment must have: pan-os-python, openpyxl
 #
@@ -46,6 +29,8 @@
   gather_facts: false
   connection: local
   serial: 1            # one firewall at a time - they all write to the same Excel file
+  vars_files:
+    - vault_panos.yml
   vars:
     pan_apply: false
     pan_commit: false
@@ -65,9 +50,8 @@
           - "Impl-{{ inventory_hostname[:25] }}"
       environment:
         PANOS_HOSTNAME: "{{ ansible_host | default(inventory_hostname) }}"
-        PANOS_API_KEY: "{{ lookup('env', 'PANOS_API_KEY') }}"
-        PANOS_USERNAME: "{{ lookup('env', 'PANOS_USERNAME') }}"
-        PANOS_PASSWORD: "{{ lookup('env', 'PANOS_PASSWORD') }}"
+        PANOS_USERNAME: "{{ panos_username }}"
+        PANOS_PASSWORD: "{{ panos_password }}"
       register: pan_run
       changed_when: >-
         (pan_apply | bool) and
